@@ -113,20 +113,6 @@ max_pib <- max(reports_clients_pib$pib, na.rm = TRUE)  # Tomar el PIB más alto 
 reports_clients_pib <- reports_clients_pib %>%
   mutate(amount_vp = amount * (max_pib / pib))
 
-reports_clients_pib <- reports_clients_pib %>%
-  mutate(log_amount_total = log(amount_vp))
-
-
-
-#  Calcular la tasa de crecimiento como la diferencia de logaritmos
-reports_clients_pib <- reports_clients_pib %>%
-  group_by(sector_alt) %>%
-  mutate(tasa_crecimiento_lobby = log_amount_total - lag(log_amount_total)) %>%
-  ungroup()
-
-summary(reports_clients_pib$log_amount_total)
-
-
 # Verificar cambios
 summary(reports_clients_pib$amount_vp)
 
@@ -139,8 +125,7 @@ pib_sectorial <- reports_clients_pib %>%
   group_by(sector_alt, año_alt, cuartil_alt) %>%
   summarise(
     pib_total = sum(pib, na.rm = TRUE),
-    amount_total = sum(amount, na.rm = TRUE),  # Sumar el amount también
-    tasa_crecimiento_lobby_total=sum(tasa_crecimiento_lobby, na.rm = TRUE)
+    amount_total = sum(amount, na.rm = TRUE)  # Sumar el amount también
   ) %>% 
   ungroup()
 # Calcular logaritmo natural del PIB total por sector
@@ -160,7 +145,8 @@ pib_sectorial <- pib_sectorial %>%
 # Verificar el resultado
 summary(pib_sectorial$tasa_crecimiento)
 
-
+pib_sectorial <- pib_sectorial %>%
+  mutate(log_amount_total = log(amount_total))
 
 
 # Guardar la base final con PIB por sector
@@ -175,7 +161,7 @@ library(ggplot2)
 library(dplyr)
 library(scales)
 # Eliminar NAs
-pib_sectorial_agg <- pib_sectorial_clean %>%
+pib_sectorial_agg <- pib_sectorial %>%
   group_by(sector_alt) %>%
   summarise(
     log_amount_total = mean(log_amount_total, na.rm = TRUE),
@@ -202,42 +188,40 @@ scatter_lobby <- ggplot(pib_sectorial_agg, aes(x = log_amount_total, y = tasa_cr
   )
 
 print(scatter_lobby)
+#install.packages("tidyverse")
 
 # 🔍 **2. Limpieza de datos**
+library(ggplot2)
 summary(pib_sectorial$año_alt)
 sum(is.na(pib_sectorial$año_alt))
 sum(is.infinite(pib_sectorial$año_alt))
 
-pib_sectorial <- pib_sectorial %>% filter(!is.na(año_alt))
-pib_sectorial$año_alt <- as.numeric(as.character(pib_sectorial$año_alt))
-
-scale_x_continuous(breaks = scales::pretty_breaks(n = 10))
 
 # 📈 **3. Evolución del PIB por sector**
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(grid)
+
 pib_sectorial_anual <- pib_sectorial %>%
   group_by(sector_alt, año_alt) %>%
-  summarise(tasa_crecimiento = mean(tasa_crecimiento, na.rm = TRUE))
+  summarise(tasa_crecimiento = mean(tasa_crecimiento, na.rm = TRUE), .groups = "drop")
 
 # Filtrar solo algunos sectores para evitar saturación
-# Definir los sectores a incluir
-sectores_destacados <- c("Mining", "Finance, insurance, real estate, rental, and leasing", "Information", 
-                         "Educational services, health care, and social assistance",
+sectores_destacados <- c("Mining", "Finance, insurance, real estate, rental, and leasing", 
+                         "Information", "Educational services, health care, and social assistance",
                          "Arts, entertainment, recreation, accommodation, and food services")
+pib_sectorial_filtrado <- pib_sectorial_anual %>% filter(sector_alt %in% sectores_destacados)
 
-# Filtrar los datos
-pib_sectorial_filtrado <- pib_sectorial_anual %>% 
-  filter(sector_alt %in% sectores_destacados) %>%
-  mutate(sector_alt = str_extract(sector_alt, "^\\w+\\s*\\w*") %>% paste(", others"))  # Acortar nombres
-
-# Paleta de colores ampliada
-colores_vibrantes <- c("#3A86FF", "#E9C46A", "#D7263D", "#2A9D8F", "#8338EC", 
-                       "#F77F00", "#457B9D", "#264653", "#3A86FF")
+# Paleta de colores vibrantes
+colores_vibrantes <- c("#E63946", "#457B9D", "#F4A261", "#2A9D8F", "#8E44AD", "#F77F00", "#1D3557")
 
 # Crear gráfico
 grafico_pib <- ggplot(pib_sectorial_filtrado, aes(x = año_alt, y = tasa_crecimiento, color = sector_alt)) +
   geom_line(size = 1) +  
   geom_point(size = 2) +  
   theme_minimal() +  
+  scale_x_continuous(breaks = pretty_breaks(n = 10)) +
   scale_color_manual(values = colores_vibrantes) +  
   labs(
     title = "Tasa de Crecimiento del PIB por Sector en el Tiempo",
@@ -249,14 +233,20 @@ grafico_pib <- ggplot(pib_sectorial_filtrado, aes(x = año_alt, y = tasa_crecimi
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",  
+    legend.text = element_text(size = 10),
     legend.title = element_text(face = "bold", size = 12),
-    legend.text = element_text(size = 10),  # 🔹 Texto más compacto
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-    axis.text.y = element_text(size = 12),
-    axis.title = element_text(face = "bold", size = 14),
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16)
-  )  
+    legend.key.width = unit(2, "cm"),  
+    legend.spacing.x = unit(0.5, "cm"),  
+    legend.box = "horizontal",  
+    legend.justification = "center",  
+    legend.margin = margin(10, 10, 10, 10),  
+    plot.margin = margin(10, 10, 60, 10)  
+  ) +
+  guides(color = guide_legend(nrow = 2))  # Poner la leyenda en 2 filas
+
 print(grafico_pib)
+
+
 
 ggsave("grafico_pib_final.png", grafico_pib, width = 12, height = 7, dpi = 400, bg = "white")
 
@@ -305,117 +295,19 @@ histograma_sectorial <- ggplot(pib_sectorial, aes(x = reorder(sector_alt, log(am
   scale_y_continuous(labels = scales::comma) +  
   theme_minimal(base_family = "serif") +  
   theme(
-    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
     axis.title = element_text(face = "bold", size = 14),
     axis.text.x = element_text(angle = 30, hjust = 1, size = 12),  
     axis.text.y = element_text(size = 12),
     legend.position = "none"
-  ) + 
+  )
+ 
   coord_flip()  # Barras horizontales
 
 print(histograma_sectorial)
 
 
 ggsave("histograma_sectorial.png", histograma_sectorial, width = 12, height = 7, dpi = 400, bg = "white")
-
-
-#Ahora la grafica de la tasa de crecimiento de la inversion en lobby en USA
-
-
-
-
-# Exportar el gráfico
-ggsave("densidad_lobby_sector.png", densidad_lobby_sector, width = 12, height = 7, dpi = 400, bg = "white")
-
-
-#Esto por si decidimos usar todos los sectores 
-colores_vibrantes <- c("#E63946", "#457B9D", "#F4A261", "#2A9D8F", "#8E44AD", 
-                       "#F77F00", "#1D3557", "#D7263D", "#3A86FF", "#8338EC", "#FB5607")
-
-grafico_pib_all <- ggplot(pib_sectorial_anual, aes(x = año_alt, y = tasa_crecimiento, color = sector_alt)) +
-  geom_line(size = 1) +  
-  geom_point(size = 2) +  
-  theme_minimal() +  
-  scale_color_manual(values = colores_vibrantes) +  
-  labs(
-    title = "Tasa de Crecimiento del PIB por Sector en el Tiempo",
-    x = "Año",
-    y = "Tasa de Crecimiento del PIB (%)",
-    color = "Sector",
-    caption = "Fuente: Datos de reports_clients_pib"
-  ) +
-  theme(
-    legend.position = "bottom",
-    legend.direction = "horizontal",  
-    legend.title = element_text(face = "bold", size = 12),
-    legend.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-    axis.text.y = element_text(size = 12),
-    axis.title = element_text(face = "bold", size = 14),
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16)
-  )
-
-
-print(grafico_pib)
-# Guardar gráfico
-ggsave("grafico_pib_legenda_corta.png", grafico_pib, width = 12, height = 8, dpi = 400, bg = "white")
-
-
-colores_vibrantes <- c("#E63946", "#457B9D", "#F4A261", "#2A9D8F", "#8E44AD", 
-                       "#F77F00", "#1D3557", "#D7263D", "#3A86FF", "#8338EC", "#FB5607")
-
-
-#Ahora un grafico con la tasa de crecimiento del lobby 
-grafico_lobby <- ggplot(pib_sectorial, aes(x = año_alt, y = tasa_crecimiento_lobby_total, color = sector_alt)) +
-  geom_line(size = 1) +  
-  geom_point(size = 2) +  
-  theme_minimal() +  
-  scale_color_manual(values = colores_vibrantes) +  
-  labs(
-    title = "Tasa de Crecimiento de la Inversión en Lobby por Sector",
-    x = "Año",
-    y = "Tasa de Crecimiento del Lobby (%)",
-    color = "Sector",
-    caption = "Fuente: Datos de reports_clients_pib"
-  ) +
-  theme(
-    legend.position = "bottom",
-    legend.direction = "horizontal",  
-    legend.title = element_text(face = "bold", size = 12),
-    legend.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-    axis.text.y = element_text(size = 12),
-    axis.title = element_text(face = "bold", size = 14),
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16)
-  )
-
-print(grafico_lobby)
-
-
-
-
-# Guardar gráfico
-ggsave("grafico_lobby.png", grafico_lobby, width = 12, height = 7, dpi = 400, bg = "white")
-
-
-
-
-
-
-
-
-
-# Exportar gráfico
-ggsave("grafico_pib_todos_sectores.png", grafico_pib, width = 12, height = 7, dpi = 400, bg = "white")
-
-
-
-
-
-
-
-
-
 
 
 
